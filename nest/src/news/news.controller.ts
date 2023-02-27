@@ -6,61 +6,67 @@ import {
   HttpException,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Post,
   Put,
-  Redirect,
+  Query,
   Render,
-  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { CommentsService } from './comments/comments.service';
-import { renderNewsAll } from '../views/news/news-all';
-import { htmlTemplate } from '../views/template';
-import { renderNewsOne } from '../views/news/news-one';
-import { AllNews, News, NewsEdit } from './news.interface';
-import { IdNewsDto } from './dto/id-news.dto';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { HelperFileLoader } from '../utils/helperFileLoader';
 import { imageFileFilter } from '../utils/imageFileFilter';
 import { MailService } from '../mail/mail.service';
 import { UpdateNewsDto } from './dto/update-news.dto';
+import { NewsEntity } from './entities/news.entity';
+import { isEmpty } from 'lodash';
 
 const PATH_NEWS = '/static/';
 const helperFileLoaderNews = new HelperFileLoader();
 helperFileLoaderNews.path = PATH_NEWS;
 
-@Controller()
+@Controller('news')
 export class NewsController {
   constructor(
     private readonly newService: NewsService,
-    private readonly commentService: CommentsService,
     private readonly mailService: MailService,
+    private readonly commentsService: CommentsService,
   ) {}
 
   // API =================================================
 
-  @Get('api/news/all')
-  async getAll(): Promise<AllNews> {
-    return this.newService.getAll();
+  @Get('api/all')
+  async getAll(userId): Promise<NewsEntity[]> {
+    return this.newService.getAll(userId);
   }
 
-  @Get('api/news/:idNews')
-  async getOneNews(@Param() params: IdNewsDto): Promise<News | Error> {
-    const intId = +params.idNews;
-    const news = await this.newService.find(intId);
-    const comments = this.commentService.findAll(intId);
+  @Get('api/details/:idNews')
+  async getOneNews(
+    @Param('idNews', ParseIntPipe) idNews: number,
+  ): Promise<NewsEntity> {
+    const news = await this.newService.findById(idNews);
+
+    if (!news) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Новость не найдена',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
     return {
       ...news,
-      comments: comments,
     };
   }
 
-  @Post('api/news/')
+  @Post('api/')
   @UseInterceptors(
     FilesInterceptor('cover', 1, {
       storage: diskStorage({
@@ -73,20 +79,20 @@ export class NewsController {
   async createNews(
     @Body() dto: CreateNewsDto,
     @UploadedFiles() cover: Express.Multer.File,
-  ): Promise<News> {
+  ): Promise<NewsEntity> {
     if (cover[0]?.filename) {
       dto.cover = PATH_NEWS + cover[0].filename;
     }
     const _news = await this.newService.createNews(dto);
-    await this.mailService.sendNewNewsForAdmins(
-      ['sizov.ilya1996@gmail.com'],
-      _news,
-    );
+    // await this.mailService.sendNewNewsForAdmins(
+    //   ['sizov.ilya1996@gmail.com'],
+    //   _news,
+    // );
 
     return _news;
   }
 
-  @Put('api/news/:idNews')
+  @Put('api/:id')
   @UseInterceptors(
     FilesInterceptor('cover', 1, {
       storage: diskStorage({
@@ -97,75 +103,90 @@ export class NewsController {
     }),
   )
   async updateNews(
-    @Param() params: IdNewsDto,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateNewsDto,
     @UploadedFiles() coverUpdate: Express.Multer.File,
   ) {
-    const intId = +params.idNews;
-    const previousNews = await this.newService.find(intId);
+    const previousNews = await this.newService.findById(id);
+
+    if (!previousNews) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Новость не найдена',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
     if (coverUpdate[0]?.filename) {
       dto.cover = PATH_NEWS + coverUpdate[0].filename;
     }
-    const updatedNews = await this.newService.update(intId, dto);
+    const updatedNews = await this.newService.update(id, dto);
 
-    if (typeof updatedNews === 'object') {
-      await this.mailService.sendEditNewsForAdmins(
-        ['sizov.ilya1996@gmail.com'],
-        previousNews,
-        updatedNews,
-      );
-    }
+    // if (typeof updatedNews === 'object') {
+    //   await this.mailService.sendEditNewsForAdmins(
+    //     ['sizov.ilya1996@gmail.com'],
+    //     previousNews,
+    //     updatedNews,
+    //   );
+    // }
 
     return updatedNews;
   }
 
-  @Delete('api/news/:idNews')
-  async removeNews(@Param() idNews: IdNewsDto): Promise<string> {
-    const intId = +idNews.idNews;
-    const isRemoved =
-      (await this.newService.remove(intId)) &&
-      (await this.commentService.removeAll(intId));
-    return isRemoved ? 'Новость удалена' : 'Передан неверный id';
+  @Delete('api/:id')
+  async removeNews(@Param('id', ParseIntPipe) id: number): Promise<string> {
+    const isRemoved = await this.newService.remove(id);
+
+    throw new HttpException(
+      {
+        status: HttpStatus.OK,
+        error: isRemoved ? 'Новость удалена' : 'Передан неверный id',
+      },
+      HttpStatus.OK,
+    );
   }
 
-  // VIEW =================================================
+  // VIEW ===============================================================================================================
 
-  @Get('view/news/')
+  @Get('all')
   @Render('news-list')
-  async getAllView() {
-    const news = await this.newService.getAll();
-    console.log(news);
-    return { news, title: 'Список новостей' };
-
-    // const content = renderNewsAll(news);
-    // return htmlTemplate(content, {
-    //   title: 'Список новостей',
-    //   description: 'Самые крутые новости на свете ',
-    // });
+  async getAllView(@Query() params) {
+    let userId;
+    if (isEmpty(params)) {
+      userId = 0;
+    }
+    userId = params.userId;
+    const news = await this.newService.getAll(userId);
+    return {
+      news,
+      title: 'Список новостей',
+    };
   }
 
-  @Get('view/news/:idNews/detail')
+  @Get('details/:id')
   @Render('news-detail')
-  async getOneNewsView(@Param() params: IdNewsDto) {
-    const intId = +params.idNews;
-    const news = await this.newService.find(intId);
-    const comments = this.commentService.findAll(intId);
+  async getOneNewsView(@Param('id', ParseIntPipe) id: number) {
+    const news = await this.newService.findById(id);
+
+    if (!news) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Новость не найдена',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
 
     return {
       news,
-      comments,
       title: 'Самая лучшая новость',
     };
-
-    // const content = renderNewsOne(news, comments);
-    // return htmlTemplate(content, {
-    //   title: 'Новость',
-    //   description: `Самая лучшая новость`,
-    // });
   }
 
-  @Get('view/news/create')
+  @Get('create/new')
   @Render('create-news')
   async createNewsView() {
     return {
