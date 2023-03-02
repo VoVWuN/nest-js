@@ -4,6 +4,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UsersEntity } from './entities/user.entity';
 import { Repository } from 'typeorm';
+import { hash } from '../utils/crypto';
+import { checkPermission, Modules } from '../utils/check-permission';
 
 @Injectable()
 export class UsersService {
@@ -13,13 +15,21 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto) {
-    const user = await this.usersRepository.create(createUserDto);
+    // const user = await this.usersRepository.create(createUserDto);
+
+    const userEntity = new UsersEntity();
+    userEntity.firstName = createUserDto.firstName;
+    userEntity.lastName = createUserDto.lastName;
+    userEntity.email = createUserDto.email;
+    userEntity.roles = createUserDto.roles;
     if (!createUserDto.avatar) {
-      user.avatar =
+      userEntity.avatar =
         'https://media.istockphoto.com/id/476085198/photo/businessman-silhouette-as-avatar-or-default-profile-picture.jpg?s=612x612&w=0&k=20&c=GVYAgYvyLb082gop8rg0XC_wNsu0qupfSLtO7q9wu38=';
     }
+    userEntity.avatar = createUserDto.avatar;
+    userEntity.password = await hash(createUserDto.password);
 
-    return this.usersRepository.save(user);
+    return this.usersRepository.save(userEntity);
   }
 
   async findAll() {
@@ -29,6 +39,12 @@ export class UsersService {
   async findOne(id: number) {
     return this.usersRepository.findOneBy({
       id,
+    });
+  }
+
+  async findByEmail(email: string) {
+    return this.usersRepository.findOneBy({
+      email,
     });
   }
 
@@ -47,10 +63,17 @@ export class UsersService {
       );
     }
 
+    if (checkPermission(Modules.changeRole, _user.roles)) {
+      _user.roles = updateUserDto.roles || _user.roles;
+    }
+
+
     _user = {
       ..._user,
       ...updateUserDto,
+      password: await hash(updateUserDto.password) || _user.password
     };
+
 
     return this.usersRepository.save(_user);
   }
