@@ -6,11 +6,17 @@ import { LoggerMiddleware } from './middlewares/logger.middleware';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import * as hbs from 'hbs';
+import * as cookieParser from 'cookie-parser';
 import { engine } from 'express-handlebars';
 
 async function bootstrap() {
   const PORT = process.env.PORT || 3000;
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableCors({
+    allowedHeaders: '*',
+    origin: '*',
+    credentials: true,
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -18,7 +24,9 @@ async function bootstrap() {
     }),
   );
   app.setBaseViewsDir(join(__dirname, '..', 'views'));
+  app.use(cookieParser());
 
+  // hbs =================================================================
   app.engine(
     'hbs',
     engine({
@@ -29,6 +37,8 @@ async function bootstrap() {
   );
   hbs.registerPartials(__dirname + '/views/partials');
   app.setViewEngine('hbs');
+
+  // OpenApi =================================================================
 
   const config = new DocumentBuilder()
     .setTitle('Урок по nest js')
