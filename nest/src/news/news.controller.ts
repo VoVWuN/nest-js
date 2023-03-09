@@ -53,11 +53,23 @@ export class NewsController {
 
   // API =================================================
 
+  @ApiOperation({ summary: 'Get all news' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'News all',
+    type: [NewsEntity],
+  })
   @Get('api/all')
   async getAll(userId): Promise<NewsEntity[]> {
     return this.newService.getAll(userId);
   }
 
+  @ApiOperation({ summary: 'Get one news by id' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'get one news',
+    type: [NewsEntity],
+  })
   @Get('api/details/:idNews')
   async getOneNews(
     @Param('idNews', ParseIntPipe) idNews: number,
@@ -117,6 +129,16 @@ export class NewsController {
     return _news;
   }
 
+  @ApiOperation({ summary: 'update news' })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'News updated',
+    type: NewsEntity,
+  })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'forbidden',
+  })
   @UseGuards(JwtAuthGuard)
   @Roles(Role.User)
   @Put('api/:id')
@@ -162,6 +184,16 @@ export class NewsController {
     return updatedNews;
   }
 
+  @ApiOperation({ summary: 'delete news' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'News deleted',
+    type: NewsEntity,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: ' news not found',
+  })
   @Delete('api/:id')
   async removeNews(@Param('id', ParseIntPipe) id: number): Promise<string> {
     const isRemoved = await this.newService.remove(id);
